@@ -4,8 +4,9 @@ import numpy as np
 import cv2
 import glob
 import time
-from sklearn.svm import LinearSVC
+from sklearn import svm
 from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import GridSearchCV
 from skimage.feature import hog
 # NOTE: the next import is only valid for scikit-learn version <= 0.17
 # for scikit-learn >= 0.18 use:
@@ -91,6 +92,8 @@ orient = 9
 pix_per_cell = 4
 cell_per_block = 2
 hog_channel = 0 # Can be 0, 1, 2, or "ALL"
+# parameters for GridSearchCV
+grid_search_parameters = {'kernel':('linear', 'rbf', 'poly'), 'C':[0.001, 0.01, 0.1, 1, 10], 'gamma':  [0.001, 0.01, 0.1, 1]}
 
 t=time.time()
 car_features = extract_features(cars, cspace=colorspace, orient=orient,
@@ -124,18 +127,20 @@ print('Using:',orient,'orientations',pix_per_cell,
     'pixels per cell and', cell_per_block,'cells per block')
 print('Feature vector length:', len(X_train[0]))
 # Use a linear SVC
-svc = LinearSVC()
+svc = svm.SVC()
 # Check the training time for the SVC
 t=time.time()
-svc.fit(X_train, y_train)
+clf = GridSearchCV(svc, grid_search_parameters)
+clf.fit(X_train, y_train)
 t2 = time.time()
 print(round(t2-t, 2), 'Seconds to train SVC...')
 # Check the score of the SVC
-print('Test Accuracy of SVC = ', round(svc.score(X_test, y_test), 4))
+print('Test Accuracy of SVC = ', round(clf.score(X_test, y_test), 4))
 # Check the prediction time for a single sample
 t=time.time()
 n_predict = 10
-print('My SVC predicts: ', svc.predict(X_test[0:n_predict]))
+print('My SVC predicts: ', clf.predict(X_test[0:n_predict]))
 print('For these',n_predict, 'labels: ', y_test[0:n_predict])
 t2 = time.time()
 print(round(t2-t, 5), 'Seconds to predict', n_predict,'labels with SVC')
+print(clf.best_params_)
