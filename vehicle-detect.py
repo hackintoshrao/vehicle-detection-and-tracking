@@ -82,18 +82,20 @@ for image in non_car_images:
     notcars.append(image)
 # Reduce the sample size because HOG features are slow to compute
 # The quiz evaluator times out after 13s of CPU time
-sample_size = 500
+sample_size = 5000
 cars = cars[0:sample_size]
 notcars = notcars[0:sample_size]
 
 ### TODO: Tweak these parameters and see how the results change.
-colorspace = 'RGB' # Can be RGB, HSV, LUV, HLS, YUV, YCrCb
+colorspace = 'HLS' # Can be RGB, HSV, LUV, HLS, YUV, YCrCb
 orient = 9
-pix_per_cell = 4
-cell_per_block = 2
+pix_per_cell = 8
+cell_per_block = 4 # RGB, 4, 2 = 92.7 , RGB, 4, 8, 93.8
+#HLS, 4, 8, 95+
+#YCrCb, 4, 8, 95+
 hog_channel = 0 # Can be 0, 1, 2, or "ALL"
 # parameters for GridSearchCV
-grid_search_parameters = {'kernel':('linear', 'rbf', 'poly'), 'C':[0.001, 0.01, 0.1, 1, 10], 'gamma':  [0.001, 0.01, 0.1, 1]}
+#grid_search_parameters = {'kernel':('linear', 'rbf', 'poly'), 'C':[0.001, 0.01, 0.1, 1, 10], 'gamma':  [0.001, 0.01, 0.1, 1]}
 
 t=time.time()
 car_features = extract_features(cars, cspace=colorspace, orient=orient,
@@ -127,10 +129,10 @@ print('Using:',orient,'orientations',pix_per_cell,
     'pixels per cell and', cell_per_block,'cells per block')
 print('Feature vector length:', len(X_train[0]))
 # Use a linear SVC
-svc = svm.SVC()
+clf = svm.SVC(kernel='linear', C=0.001, gamma=0.001)
 # Check the training time for the SVC
 t=time.time()
-clf = GridSearchCV(svc, grid_search_parameters)
+#clf = GridSearchCV(svc, grid_search_parameters)
 clf.fit(X_train, y_train)
 t2 = time.time()
 print(round(t2-t, 2), 'Seconds to train SVC...')
@@ -143,4 +145,4 @@ print('My SVC predicts: ', clf.predict(X_test[0:n_predict]))
 print('For these',n_predict, 'labels: ', y_test[0:n_predict])
 t2 = time.time()
 print(round(t2-t, 5), 'Seconds to predict', n_predict,'labels with SVC')
-print(clf.best_params_)
+#print(clf.best_params_)
