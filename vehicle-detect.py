@@ -10,6 +10,8 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import GridSearchCV
 from skimage.feature import hog
 from sklearn.externals import joblib
+from scipy import ndimage as ndi
+from moviepy.editor import VideoFileClip
 # NOTE: the next import is only valid for scikit-learn version <= 0.17
 # for scikit-learn >= 0.18 use:
 # from sklearn.model_selection import train_test_split
@@ -76,7 +78,7 @@ def extract_features(imgs, cspace='RGB', orient=9,
         # Read in each one by one
         image = mpimg.imread(file)
         # normalize the pixels.
-        image = image.astype(np.float32)/255
+        #image = image.astype(np.float32)/255
         # apply color conversion.
         feature_image = convert_color(image, cspace)
 
@@ -164,6 +166,8 @@ def single_img_features(img, color_space='RGB', spatial_size=(32, 32),
                         hist_bins=32, orient=9,
                         pix_per_cell=8, cell_per_block=2, hog_channel=0,
                         spatial_feat=True, hist_feat=True, hog_feat=True):
+
+    img = img.astype(np.float32)/255
     #1) Define an empty list to receive features
     img_features = []
     #2) Apply color conversion if other than 'RGB'
@@ -238,6 +242,45 @@ def search_windows(img, windows, clf, scaler, color_space='RGB',
             on_windows.append(window)
     #8) Return windows for positive detections
     return on_windows
+
+# Convert windows to heatmap numpy array.
+def create_heatmap(windows, image_shape):
+    background = np.zeros(image_shape[:2])
+    for window in windows:
+        background[window[0][1]:window[1][1], window[0][0]:window[1][0]] += 1
+    return background
+
+# find the nonzero areas from a heatmap and
+# turn them to windows
+def find_windows_from_heatmap(image):
+    hot_windows = []
+    # Threshold the heatmap
+    thres = 0
+    image[image <= thres] = 0
+    # Set labels
+    labels = ndi.label(image)
+    # iterate through labels and find windows
+    for car_number in range(1, labels[1]+1):
+        # Find pixels with each car_number label value
+        nonzero = (labels[0] == car_number).nonzero()
+        # Identify x and y values of those pixels
+        nonzeroy = np.array(nonzero[0])
+        nonzerox = np.array(nonzero[1])
+        # Define a bounding box based on min/max x and y
+        bbox = ((np.min(nonzerox), np.min(nonzeroy)), (np.max(nonzerox), np.max(nonzeroy)))
+        hot_windows.append(bbox)
+    return hot_windows
+
+def combine_boxes(windows, image_shape):
+    hot_windows = []
+    image = None
+    if len(windows)>0:
+        # Create heatmap with windows
+        image = create_heatmap(windows, image_shape)
+        # find boxes from heatmap
+        hot_windows = find_windows_from_heatmap(image)
+    # return new windows
+    return hot_windows
 
 
 # Divide up into cars and notcars
@@ -343,36 +386,56 @@ else:
     clf = joblib.load(filename_train)
     X_scaler = joblib.load(filename_scaler)
 
-#print(clf.best_params_)
-image = mpimg.imread('./test_images/test6.jpg')
-image = image.astype(np.float32)/255
-draw_image = np.copy(image)
 
-y_start_stop = [image.shape[0]//2 + 50, image.shape[0]]
-# Uncomment the following line if you extracted training
-# data from .png images (scaled 0 to 1 by mpimg) and the
-# image you are searching is a .jpg (scaled 0 to 255)
-#image = image.astype(np.float32)/255
 
-windows = slide_window(image, x_start_stop=[None, None], y_start_stop=[400, 500],
+
+
+
+def process_image(image):
+    draw_image = np.copy(image)
+
+    y_start_stop = [image.shape[0]//2 + 50, image.shape[0]]
+
+    windows = slide_window(image, x_start_stop=[None, None], y_start_stop=[350, 500],
                     xy_window=(96, 96), xy_overlap=(0.75, 0.75))
 
-windows += slide_window(image, x_start_stop=[None, None], y_start_stop=[400, 500],
-                    xy_window=(144, 144), xy_overlap=(0.75, 0.75))
-windows += slide_window(image, x_start_stop=[None, None], y_start_stop=[430, 550],
-                    xy_window=(192, 192), xy_overlap=(0.75, 0.75))
-windows += slide_window(image, x_start_stop=[None, None], y_start_stop=[460, 580],
+    windows += slide_window(image, x_start_stop=[None, None], y_start_stop=[400, 500],
+                    xy_window=(132, 132), xy_overlap=(0.75, 0.75))
+    windows += slide_window(image, x_start_stop=[None, None], y_start_stop=[430, 550],
+                    xy_window=(175, 175), xy_overlap=(0.75, 0.75))
+    windows += slide_window(image, x_start_stop=[None, None], y_start_stop=[450, 650],
 xy_window=(192, 192), xy_overlap=(0.75, 0.75))
 
 
-hot_windows = search_windows(image, windows, clf, X_scaler, color_space=colorspace,
+    hot_windows = search_windows(image, windows, clf, X_scaler, color_space=colorspace,
                         spatial_size=spatial_size, hist_bins=hist_bins,
                         orient=orient, pix_per_cell=pix_per_cell,
                         cell_per_block=cell_per_block,
                         hog_channel=hog_channel, spatial_feat=True,
                         hist_feat=True, hog_feat=True)
-print("Hot windows: ",hot_windows)
-window_img = draw_boxes(draw_image, hot_windows, color=(0, 0, 255), thick=6)
 
+
+#draw_image = draw_boxes(draw_image, hot_windows, color=(255, 0, 0), thick=6)
+    combined_windows = combine_boxes(hot_windows, image.shape)
+    if len(detections) == 0:
+
+    print("Hot windows: ",combined _windows)
+    window_img = draw_boxes(draw_image, combined_windows, color=(0, 0, 255), thick=6)
+
+    return window_img
+
+"""image = mpimg.imread('./test_images/test6.jpg')
+window_img = process_video(image)
 plt.imshow(window_img)
-plt.show()
+plt.show()"""
+
+
+
+# output video directory
+video_output = './project_video_after_full.mp4'
+# input video directory
+clip1 = VideoFileClip("./project_video.mp4").subclip(20,30)
+# video process pipline
+video_clip = clip1.fl_image(process_image)
+# write processed files
+video_clip.write_videofile(video_output, audio=False)
