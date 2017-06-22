@@ -5,6 +5,7 @@ import cv2
 import glob
 import time
 import pickle
+import copy
 from sklearn import svm
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import GridSearchCV
@@ -12,6 +13,7 @@ from skimage.feature import hog
 from sklearn.externals import joblib
 from scipy import ndimage as ndi
 from moviepy.editor import VideoFileClip
+
 # NOTE: the next import is only valid for scikit-learn version <= 0.17
 # for scikit-learn >= 0.18 use:
 # from sklearn.model_selection import train_test_split
@@ -417,20 +419,116 @@ xy_window=(192, 192), xy_overlap=(0.75, 0.75))
 
 #draw_image = draw_boxes(draw_image, hot_windows, color=(255, 0, 0), thick=6)
     combined_windows = combine_boxes(hot_windows, image.shape)
-    if len(detections) == 0:
+
+        if len(detections) == 0:
+            for window in combined_windows:
+                print("0 Detections adding everything...")
+                box_points = get_box_points(window)
+                new_car = Detection().add(box_points)
+                detections.append(new_car)
+        else:
+            for car in detections:
+                for box in combined_windows:
 
     print("Hot windows: ",combined _windows)
     window_img = draw_boxes(draw_image, combined_windows, color=(0, 0, 255), thick=6)
 
     return window_img
 
+def get_box_points(box):
+    """
+    Takes in box points of form ((x1,y1), (x2, y2)) and converts it to form
+    [x1, y1, x2, y2].
+    """
+    box_points = []
+    x1, y1 = box[0]
+    x2, y2 = box[1]
+
+    box_points.append(x1)
+    box_points.append(y1)
+    box_points.append(x2)
+    box_points.append(y2)
+    return box_points
+
 """image = mpimg.imread('./test_images/test6.jpg')
 window_img = process_video(image)
 plt.imshow(window_img)
 plt.show()"""
 
+margin = 100
+min_consecutive_detection = 2
+max_allowed_miss = 2
+confidence_thresh = 10
+
+def is_within_margin(a, b):
+    if abs(a-b) > margin:
+        return False
+    return True
+
+class Detection():
+    def __init__(self):
+        # the box coordinates in the form [x1,y1,x2,y2]
+        self.last_box = []
+        # number of consecutive frames in which the car has been detected.
+        self.consecutive_detection = 0
+        # number of consecutive frames in which the car has not been found.
+        self.consecutive_miss = 0
+        # the box coordinates of last n detections in the form deque([[x1, y1, x2, y2], [x1, y1, x2, y2], [x1, y1, x2, y2]...], maxlen=5)
+        self.last_n_detections = deque(size=5)
+        # [avg x1 , avg y1, avg x2, avgy2] of last n detections.
+        self.average_box = []
+
+    def add(self, box):
+        """
+        box argument should be of format [x1, y1, x2, y2]
+        """
+        print("Adding Detection: ")
+        print("last box: ", self.last_box)
+        print("New box: ", box)
+        self.last_box = box
+        self.consecutive_detection =  self.consecutive_detection + 1
+        self.last_n_detections.append(box)
+        self.average_detections()
+        # set the previous count of consecutive misses to 0.
+        self.consecutive_miss = 0
+
+    def average_detections(self):
+        """
+        Find the mean of detections in the deque.
+        """
+        self.average_box = np.mean(self.last_n_detections, axis=0)
+
+    def match_detection(box):
+        """
+        Checks whether the box is very close/similar to the [x1, y1, x2, y2]
+        box argument should be of format [x1, y1, x2, y2]
+        """
+        for i, point in box:
+            # see if all the points in the box lies within the margin of the last detection.
+            if not is_within_margin(point, self.last_box[i]):
+                return False
+        # If the match found then add it to the detection.
+        self.add(box)
+        return True
+
+    def failed_detect(box):
+         delete_detection = True
+         self.consecutive_miss = self.consecutive_miss + 1
+         # In case the car doesn't get for more than 3 frames consecutively we discard the
+         # object.
+         if self.consecutive_miss  > max_allowed_miss:
+             return delete_detection
+        # This helps remove the stray false positives which doesn't get detected in
+        # consecutive frames.
+         if self.consecutive_detection < min_consecutive_detection:
+             return delete_detection
+
+         # Wait till you the miss becomes greater than max_allowed_miss.
+         return False
 
 
+# array of Detection class.
+detections = []
 # output video directory
 video_output = './project_video_after_full.mp4'
 # input video directory
