@@ -1,7 +1,5 @@
 ##Writeup Template
-###You can use this file as a template for your writeup if you want to submit it as a markdown file, but feel free to use some other method and submit a pdf if you prefer.
 
----
 
 **Vehicle Detection Project**
 
@@ -14,19 +12,7 @@ The goals / steps of this project are the following:
 * Run your pipeline on a video stream (start with the test_video.mp4 and later implement on full project_video.mp4) and create a heat map of recurring detections frame by frame to reject outliers and follow detected vehicles.
 * Estimate a bounding box for vehicles detected.
 
-[//]: # (Image References)
-[image1]: ./examples/car_not_car.png
-[image2]: ./examples/HOG_example.jpg
-[image3]: ./examples/sliding_windows.jpg
-[image4]: ./examples/sliding_window.jpg
-[image5]: ./examples/bboxes_and_heat.png
-[image6]: ./examples/labels_map.png
-[image7]: ./examples/output_bboxes.png
-[video1]: ./project_video.mp4
-
 ## [Rubric](https://review.udacity.com/#!/rubrics/513/view) Points
-###Here I will consider the rubric points individually and describe how I addressed each point in my implementation.  
-
 ---
 ###Writeup / README
 
@@ -38,65 +24,80 @@ You're reading it!
 
 ####1. Explain how (and identify where in your code) you extracted HOG features from the training images.
 
-The code for this step is contained in the first code cell of the IPython notebook (or in lines # through # of the file called `some_file.py`).  
+- Used the `hog` function from `skimage.feature` to obtain hog. Below is the wrapper which is used to derive HOG feature, 
 
-I started by reading in all the `vehicle` and `non-vehicle` images.  Here is an example of one of each of the `vehicle` and `non-vehicle` classes:
+```
+# Define a function to return HOG features and visualization
+def get_hog_features(img, orient, pix_per_cell, cell_per_block,
+                        vis=False, feature_vec=True):
+    # Call with two outputs if vis==True
+    if vis == True:
+        features, hog_image = hog(img, orientations=orient, pixels_per_cell=(pix_per_cell, pix_per_cell),
+                                  cells_per_block=(cell_per_block, cell_per_block), transform_sqrt=True,
+                                  visualise=vis, feature_vector=feature_vec)
+        return features, hog_image
+    # Otherwise call with one output
+    else:
+        features = hog(img, orientations=orient, pixels_per_cell=(pix_per_cell, pix_per_cell),
+                       cells_per_block=(cell_per_block, cell_per_block), transform_sqrt=True,
+                       visualise=vis, feature_vector=feature_vec)
+        return features
+```
 
-![alt text][image1]
+- Resorted to the validation score of the machine learning model on a sub-sample of the data set to predict the best set of parameters for HOG.
+- Initially when RGB color space was tried on a model which was trained on 5000 images, the accuracy on validation set was not going beyond 93%.
+- But with trying various color the accuracy scored the best with `YCrCb` color space. It seemed to help the model distuigh cars and non cars better.
+- The same experiement was tried with other parameters of HOG too.
+- After trying various combinations of features against the trained model, the prediction accuracy was its best for the following paramters, and these 
+  were chosen as final set of parameters.
+ ```
+ colorspace = 'YCrCb' 
+ orient = 8
+ pix_per_cell = 8
+ cell_per_block = 2
+ hog_channel = 'ALL' 
+ spatial_size = (16, 16)
+ hist_bins = 32
+ hist_range=(0, 256) 	
+ ```
 
-I then explored different color spaces and different `skimage.hog()` parameters (`orientations`, `pixels_per_cell`, and `cells_per_block`).  I grabbed random images from each of the two classes and displayed them to get a feel for what the `skimage.hog()` output looks like.
 
-Here is an example using the `YCrCb` color space and HOG parameters of `orientations=8`, `pixels_per_cell=(8, 8)` and `cells_per_block=(2, 2)`:
-
-
-![alt text][image2]
-
-####2. Explain how you settled on your final choice of HOG parameters.
-
-I tried various combinations of parameters and...
-
-####3. Describe how (and identify where in your code) you trained a classifier using your selected HOG features (and color features if you used them).
-
-I trained a linear SVM using...
+####2. Describe how (and identify where in your code) you trained a classifier using your selected HOG features (and color features if you used them).
+- Used a SVM classifier.
+- Used GridSearchCV to obtain the optimal kernel, C and gamma combination for the SVM classifier.[Here](https://github.com/hackintoshrao/vehicle-detection-and-tracking/blob/4260c3bf66a74580ebbef71f30c425a306a260a5/vehicle-detect.py#L133) is the code snippet of how GridSearchCV was used to obtain the optimal combination of paramters.
+- Pamaters `kernel='linear', C=0.001, gamma=0.001` is used to train the SVM classifier.
+- Used Histogram of bins, HOG and raw pizels of scaled image was feature to train the model.
+- Obtained over 99% accuracy on the validation set.
+- Since the training was done on `.png` images the features were already scaled between 0 and 1.
+- Standard Scaler from `sklearn.preprocessing` is used to scale the features appropriately.
 
 ###Sliding Window Search
 
 ####1. Describe how (and identify where in your code) you implemented a sliding window search.  How did you decide what scales to search and how much to overlap windows?
+- The search had to be performed only in the region of interest, this avoids lot of false detections.
+- Used large scales to search near the bottom of the image, this is because the vehicle would appear larger near to the bottom of the image.
+- Reduced scales are used to search in ranges which are close to the middle of the image, this is because the vehicle would smaller and smaller the further it moves.
+- After Experimenting with various combinations of overlapping found the overlap of 0.5 to be a fair value for reasonable detection.
 
-I decided to search random window positions at random scales all over the image and came up with this (ok just kidding I didn't actually ;):
-
-![alt text][image3]
 
 ####2. Show some examples of test images to demonstrate how your pipeline is working.  What did you do to optimize the performance of your classifier?
 
-Ultimately I searched on two scales using YCrCb 3-channel HOG features plus spatially binned color and histograms of color in the feature vector, which provided a nice result.  Here are some example images:
-
-![alt text][image4]
----
+- By trying various color channels, `YCrCb` channel seemed to be performing the best with the classifier.
+- Using GridSeachCV found the optimal values of kernel, C and gamma values to be used.
+- The folder `./result/first_detections/ contains multiple overlapping detections which were found after the initial round of search->classify->draw-boxes.
+- The final results with heap map and labelling applied are saved in `result/final_result` folder.
+- The trained model and pipeline performed reasonably well on the test images, so over optimization was not necessary.
 
 ### Video Implementation
-
-####1. Provide a link to your final video output.  Your pipeline should perform reasonably well on the entire project video (somewhat wobbly or unstable bounding boxes are ok as long as you are identifying the vehicles most of the time with minimal false positives.)
-Here's a [link to my video result](./project_video.mp4)
-
-
-####2. Describe how (and identify where in your code) you implemented some kind of filter for false positives and some method for combining overlapping bounding boxes.
-
-I recorded the positions of positive detections in each frame of the video.  From the positive detections I created a heatmap and then thresholded that map to identify vehicle positions.  I then used `scipy.ndimage.measurements.label()` to identify individual blobs in the heatmap.  I then assumed each blob corresponded to a vehicle.  I constructed bounding boxes to cover the area of each blob detected.  
-
-Here's an example result showing the heatmap from a series of frames of video, the result of `scipy.ndimage.measurements.label()` and the bounding boxes then overlaid on the last frame of video:
-
-### Here are six frames and their corresponding heatmaps:
-
-![alt text][image5]
-
-### Here is the output of `scipy.ndimage.measurements.label()` on the integrated heatmap from all six frames:
-![alt text][image6]
-
-### Here the resulting bounding boxes are drawn onto the last frame in the series:
-![alt text][image7]
-
-
+- Here is the [Youtube link](https://youtu.be/2EZ6I_J4FQc) to the video of the detection and tracking, its also saved in `./result/video/project_video_track.mp4`.
+- Series of sub clips with low level of robustness are saved in `./result/video/bad_video/`.
+- The folder `./result/debug/` contains screenshots taken while debugging the code.
+- The video contains zero false positives, the pipeline is very robust.
+- Here are the techniques used for robust detection and tracking.
+	- Create heapmap around the detections from search and then label them to obtain a single box of detection.
+	- Accepting detections only if they appear for 8 consecutive frames, This totally eliminates false positivies.
+	- Average values of last 10 box detections are used for smoother transition of boxes across frames.
+	- If the detection goes missing for next few frames the average is used to add boxes will the confidence dies off. 
 
 ---
 
@@ -104,5 +105,9 @@ Here's an example result showing the heatmap from a series of frames of video, t
 
 ####1. Briefly discuss any problems / issues you faced in your implementation of this project.  Where will your pipeline likely fail?  What could you do to make it more robust?
 
-Here I'll talk about the approach I took, what techniques I used, what worked and why, where the pipeline might fail and how I might improve it if I were going to pursue this project further.  
+- The first challenge was to obtain optimal set of parameters for HOG features extraction, with trying out the machine learning prediction for various combination of color channel and other parameters finalized upon the values Ive used.
+- The other big challenge was to find the optimal combination of kernel, C and gamma features for training the model. Using GridSearchCV, was able to find the optimal combination of the parameters for SVM classifier.
+- The biggest challenge was to remove false postivies from the video and to make the boxes trasist smoothe across frames, to achieve this, created a called `Detection()`. Using the class allowed a box to drawn only if a detection is achieved over 8 consecutive frames, this eliminated all false positives, and by taking the average box detection values over last 10 detections, got the boxes to be moved smoothly and gracefully across frames.
 
+- The pipelines is not effective for vehicle coming head on, need to extract more frames per second to make it better.
+- The pipeline finds it hard to distinguish between vehicles when they are very close to each other, this makes the detection not so robost in traffic situations, more sophisticated training using convnets might be necessary to achieve greater efficiency in prediction.
