@@ -408,17 +408,25 @@ else:
 def process_image(image):
     draw_image = np.copy(image)
 
+    windows = slide_window(image, x_start_stop=[None, None], y_start_stop=[400, 640],
+                    xy_window=(96, 96), xy_overlap=(0.75, 0.75))
 
-    windows = slide_window(image, x_start_stop=[None, None], y_start_stop=[400, 660],
-                    xy_window=(128, 128), xy_overlap=(0.5, 0.5))
+    windows += slide_window(image, x_start_stop=[32, None], y_start_stop=[400, 610],
+                    xy_window=(144, 144), xy_overlap=(0.75, 0.75))
+    windows += slide_window(image, x_start_stop=[410, 1280], y_start_stop=[390, 540],
+                    xy_window=(192, 192), xy_overlap=(0.75, 0.75))
+    """
+    windows = slide_window(image, x_start_stop=[None, None], y_start_stop=[400, 500],
+                    xy_window=(96, 96), xy_overlap=(0.75, 0.75))
 
-    windows += slide_window(image, x_start_stop=[32, None], y_start_stop=[400, 600],
-                    xy_window=(96, 96), xy_overlap=(0.5, 0.5))
-    windows += slide_window(image, x_start_stop=[410, 1280], y_start_stop=[390, 550],
-                    xy_window=(80, 80), xy_overlap=(0.5, 0.5))
+    windows += slide_window(image, x_start_stop=[None, None], y_start_stop=[400, 500],
+                    xy_window=(144, 144), xy_overlap=(0.75, 0.75))
+    windows += slide_window(image, x_start_stop=[None, None], y_start_stop=[430, 550],
+                    xy_window=(192, 192), xy_overlap=(0.75, 0.75))
+    windows += slide_window(image, x_start_stop=[None, None], y_start_stop=[460, 580],
+                    xy_window=(192, 192), xy_overlap=(0.75, 0.75))
 
-
-
+    """
     hot_windows = search_windows(image, windows, clf, X_scaler, color_space=colorspace,
                         spatial_size=spatial_size, hist_bins=hist_bins,
                         orient=orient, pix_per_cell=pix_per_cell,
@@ -458,8 +466,10 @@ def process_image(image):
                 if car.match_detection(box_points):
                     match_found = True
                     if car.consecutive_detection >= min_consecutive_detection:
-                        print(" more than once consecutive match dding to filter: ", box)
-                        filtered_windows.append(box)
+                        print(" more than once consecutive match adding to filter: ", box)
+                        average_box = car.average_detections()
+                        print("But adding its average: ",average_box)
+                        filtered_windows.append(((average_box[0],average_box[1]),(average_box[2], average_box[3])))
                     else:
                         print("First detection not adding.", box)
                     # remove after the match.
@@ -531,8 +541,8 @@ plt.imshow(window_img)
 plt.show()"""
 
 margin = 100
-min_consecutive_detection = 2
-max_allowed_miss = 2
+min_consecutive_detection = 8
+max_allowed_miss = 4
 confidence_thresh = 10
 
 def is_within_margin(a, b):
@@ -549,7 +559,7 @@ class Detection():
         # number of consecutive frames in which the car has not been found.
         self.consecutive_miss = 0
         # the box coordinates of last n detections in the form deque([[x1, y1, x2, y2], [x1, y1, x2, y2], [x1, y1, x2, y2]...], maxlen=5)
-        self.last_n_detections = deque(maxlen=5)
+        self.last_n_detections = deque(maxlen=10)
         # [avg x1 , avg y1, avg x2, avgy2] of last n detections.
         self.average_box = []
 
@@ -622,9 +632,9 @@ class Detection():
 # array of Detection class.
 detections = []
 # output video directory
-video_output = './project_video_class_2.mp4'
+video_output = './project_video_class_5.mp4'
 # input video directory
-clip1 = VideoFileClip("./project_video.mp4").subclip(0,20)
+clip1 = VideoFileClip("./project_video.mp4")
 # video process pipline
 video_clip = clip1.fl_image(process_image)
 # write processed files
