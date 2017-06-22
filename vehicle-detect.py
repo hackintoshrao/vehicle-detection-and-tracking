@@ -13,6 +13,7 @@ from skimage.feature import hog
 from sklearn.externals import joblib
 from scipy import ndimage as ndi
 from moviepy.editor import VideoFileClip
+from collections import deque
 
 # NOTE: the next import is only valid for scikit-learn version <= 0.17
 # for scikit-learn >= 0.18 use:
@@ -157,8 +158,19 @@ def draw_boxes(img, bboxes, color=(0, 0, 255), thick=6):
     imcopy = np.copy(img)
     # Iterate through the bounding boxes
     for bbox in bboxes:
+        # Convert the coordinates into integer values first.
+        x1, y1 = bbox[0]
+        x2, y2 = bbox[1]
+
+        x1 = int(x1)
+        y1 = int(y1)
+        x2 = int(x2)
+        y2 = int(y2)
+        bbox_int = []
+        bbox_int.append((x1, y1))
+        bbox_int.append((x2, y2))
         # Draw a rectangle given bbox coordinates
-        cv2.rectangle(imcopy, bbox[0], bbox[1], color, thick)
+        cv2.rectangle(imcopy, bbox_int[0], bbox_int[1], color, thick)
     # Return the image copy with boxes drawn
     return imcopy
 # Define a function to extract features from a single image window
@@ -396,17 +408,15 @@ else:
 def process_image(image):
     draw_image = np.copy(image)
 
-    y_start_stop = [image.shape[0]//2 + 50, image.shape[0]]
 
-    windows = slide_window(image, x_start_stop=[None, None], y_start_stop=[350, 500],
-                    xy_window=(96, 96), xy_overlap=(0.75, 0.75))
+    windows = slide_window(image, x_start_stop=[None, None], y_start_stop=[400, 660],
+                    xy_window=(128, 128), xy_overlap=(0.5, 0.5))
 
-    windows += slide_window(image, x_start_stop=[None, None], y_start_stop=[400, 500],
-                    xy_window=(132, 132), xy_overlap=(0.75, 0.75))
-    windows += slide_window(image, x_start_stop=[None, None], y_start_stop=[430, 550],
-                    xy_window=(175, 175), xy_overlap=(0.75, 0.75))
-    windows += slide_window(image, x_start_stop=[None, None], y_start_stop=[450, 650],
-xy_window=(192, 192), xy_overlap=(0.75, 0.75))
+    windows += slide_window(image, x_start_stop=[32, None], y_start_stop=[400, 600],
+                    xy_window=(96, 96), xy_overlap=(0.5, 0.5))
+    windows += slide_window(image, x_start_stop=[410, 1280], y_start_stop=[390, 550],
+                    xy_window=(80, 80), xy_overlap=(0.5, 0.5))
+
 
 
     hot_windows = search_windows(image, windows, clf, X_scaler, color_space=colorspace,
@@ -417,21 +427,86 @@ xy_window=(192, 192), xy_overlap=(0.75, 0.75))
                         hist_feat=True, hog_feat=True)
 
 
-#draw_image = draw_boxes(draw_image, hot_windows, color=(255, 0, 0), thick=6)
+    #draw_image = draw_boxes(draw_image, hot_windows, color=(255, 0, 0), thick=6)
     combined_windows = combine_boxes(hot_windows, image.shape)
+    filtered_windows = []
+    # no car detection yet, create new detections and add them to the list.
+    if len(detections) == 0:
+        for window in combined_windows:
+            print("0 Detections adding everything...")
+            box_points = get_box_points(window)
+            new_car = Detection()
+            new_car.add(box_points)
+            detections.append(new_car)
+            window_img = draw_boxes(draw_image, filtered_windows, color=(0, 0, 255), thick=6)
+            return window_img
+    else:
+        boxes_copy = copy.copy(combined_windows)
+        # Run thorugh all the existing detections and see if any new detections
+        # matche with them.
+        # if match is found add to the detection.
+        # If not found decrease the confidence of the previous detection.
+        print("Length of detections: ", len(detections))
+        print("Lenght of detected hot windows: ",len(combined_windows))
+        non_detected_cars_idxs = []
+        for car_idx, car in enumerate(detections):
+            print("interating through detections: ", car.last_n_detections )
+            match_found = False
+            box_detection_idx = 0
+            for idx, box in enumerate(boxes_copy):
+                box_points = get_box_points(box)
+                if car.match_detection(box_points):
+                    match_found = True
+                    if car.consecutive_detection >= min_consecutive_detection:
+                        print(" more than once consecutive match dding to filter: ", box)
+                        filtered_windows.append(box)
+                    else:
+                        print("First detection not adding.", box)
+                    # remove after the match.
+                    box_detection_idx = idx
+                    # Match for the car is found, break the inner loop
+                    break
 
-        if len(detections) == 0:
-            for window in combined_windows:
-                print("0 Detections adding everything...")
-                box_points = get_box_points(window)
-                new_car = Detection().add(box_points)
-                detections.append(new_car)
-        else:
-            for car in detections:
-                for box in combined_windows:
+            # Match not found for the previous detection, decrease its confidence.
+            # The delete detections is true, remove the detection from the list of previous detections.
+            if not match_found:
+                print("inside if not match found: ", car.last_n_detections)
+                delete_Detection = car.failed_detect()
+                if delete_Detection:
+                    print("Deleting detection: ",car.consecutive_detection)
+                    non_detected_cars_idxs.append(car_idx)
+                else:
+                    print("Miss: But obtaining the average.")
+                    average_box = car.average_detections()
+                    filtered_windows.append(((average_box[0],average_box[1]),(average_box[2], average_box[3])))
+            else:
+                # Delete the detected box from the list of boxes to be mathched.
+                print("Box match found and this deleting it from copy: ", boxes_copy[box_detection_idx] )
+                del boxes_copy[box_detection_idx]
 
-    print("Hot windows: ",combined _windows)
-    window_img = draw_boxes(draw_image, combined_windows, color=(0, 0, 255), thick=6)
+        # Remove all the undetected cars from the list of detections using thier saved index.
+        if len(non_detected_cars_idxs) > 0:
+             non_detected_cars_idxs =  non_detected_cars_idxs[::-1]
+             print("delete car indexes: ",non_detected_cars_idxs)
+             for i in non_detected_cars_idxs:
+                print("Deleting car from detections, remove order: ", detections[i].last_n_detections)
+                del detections[i]
+
+        # Add the unmatched boxes to the detections array.
+        for box in boxes_copy:
+            print("NEw box found.. not seen before, failed comparisons")
+            box_points = get_box_points(box)
+            new_car = Detection()
+            new_car.add(box_points)
+            detections.append(new_car)
+
+            # If the match is not found decrease the confidence of the detection.
+
+
+    print("Hot windows: ",combined_windows)
+    print("filtered windows: ",filtered_windows)
+
+    window_img = draw_boxes(draw_image, filtered_windows, color=(0, 0, 255), thick=6)
 
     return window_img
 
@@ -474,7 +549,7 @@ class Detection():
         # number of consecutive frames in which the car has not been found.
         self.consecutive_miss = 0
         # the box coordinates of last n detections in the form deque([[x1, y1, x2, y2], [x1, y1, x2, y2], [x1, y1, x2, y2]...], maxlen=5)
-        self.last_n_detections = deque(size=5)
+        self.last_n_detections = deque(maxlen=5)
         # [avg x1 , avg y1, avg x2, avgy2] of last n detections.
         self.average_box = []
 
@@ -496,32 +571,49 @@ class Detection():
         """
         Find the mean of detections in the deque.
         """
-        self.average_box = np.mean(self.last_n_detections, axis=0)
 
-    def match_detection(box):
+        self.average_box = np.mean(self.last_n_detections, axis=0)
+        print("In average: average: alst detections: ", self.last_n_detections)
+        print("average detections: ",     self.average_box)
+        return self.average_box
+
+    def match_detection(self, box):
         """
         Checks whether the box is very close/similar to the [x1, y1, x2, y2]
         box argument should be of format [x1, y1, x2, y2]
         """
-        for i, point in box:
+        i = 0
+        for point in box:
             # see if all the points in the box lies within the margin of the last detection.
+
             if not is_within_margin(point, self.last_box[i]):
+                print("mismatch  of box found: ")
+                print("old box: ", self.last_box)
+                print("new box: ", box)
                 return False
+            i = i + 1
         # If the match found then add it to the detection.
+        print("match of box found: ")
+        print("old box: ", self.last_box)
+        print("new box: ", box)
         self.add(box)
         return True
 
-    def failed_detect(box):
+    def failed_detect(self):
          delete_detection = True
          self.consecutive_miss = self.consecutive_miss + 1
          # In case the car doesn't get for more than 3 frames consecutively we discard the
          # object.
          if self.consecutive_miss  > max_allowed_miss:
+             print("Failed Detection:self.consecutive_miss  > max_allowed_miss: ",self.last_n_detections)
              return delete_detection
         # This helps remove the stray false positives which doesn't get detected in
         # consecutive frames.
          if self.consecutive_detection < min_consecutive_detection:
+             print("Failed Detection:self.consecutive_detection < min_consecutive_detection: ",self.last_n_detections)
              return delete_detection
+
+         print("failed detection: but second chance: : no.consecutive_detection: ", self.consecutive_detection)
 
          # Wait till you the miss becomes greater than max_allowed_miss.
          return False
@@ -530,9 +622,9 @@ class Detection():
 # array of Detection class.
 detections = []
 # output video directory
-video_output = './project_video_after_full.mp4'
+video_output = './project_video_class_2.mp4'
 # input video directory
-clip1 = VideoFileClip("./project_video.mp4").subclip(20,30)
+clip1 = VideoFileClip("./project_video.mp4").subclip(0,20)
 # video process pipline
 video_clip = clip1.fl_image(process_image)
 # write processed files
